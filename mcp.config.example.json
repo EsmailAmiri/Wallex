@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wallex-official": {
+      "url": "https://api.wallex.ir/mcp",
+      "headers": {"X-API-Key": "<WALLEX_API_KEY>"}
+    }
+  }
+}
