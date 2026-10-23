@@ -4,20 +4,30 @@ import json
 import math
 import sqlite3
 import threading
+import os
 from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from wallex_settings import settings
 
-VERSION = 'entry-veto-v1'
+VERSION = 'entry-veto-v2-prompt-hash'
 CACHE = Path(__file__).resolve().parent / 'data' / 'llm-votes.sqlite3'
 LOCK = threading.Lock()
-SYSTEM = '''You review a proposed long-only spot BUY, using only the supplied past-bar features.
-Decide whether evidence justifies entry after round-trip fees and slippage. Do not forecast
-guaranteed returns. Reject weak or uncertain evidence. You cannot change orders, risk or policy.
-Return only JSON: {"approve": boolean, "confidence": number from 0 to 100,
-"reason_code": one of "trend", "weak_edge", "uncertain", "costs"}. No tools or prose.'''
+SYSTEM = '''You are the quantitative trading intelligence agent for spot trading on Wallex.
+Evaluate candidate long spot entries on 15-minute crypto bars.
+Round-trip friction is approximately ~0.70% (taker fees 0.30% each side + 0.05% slippage each side).
+Mandate: capital preservation first, asymmetric profit second.
+
+Evaluation Rules:
+1. REGIME: Approve ONLY if the market demonstrates a valid upward regime (positive trend_pct, ADX >= 20, price structure holding above key moving averages).
+2. EXHAUSTION GUARD: REJECT ("weak_edge") if RSI > 66, or if price is extended far above the fast EMA, or right after an abrupt vertical spike. Best entries occur on pullbacks in an active trend.
+3. FEE HURDLE: REJECT ("costs") if the expected volatility (ATR%) is too low (< 0.5%) to comfortably overcome 0.70% round-trip friction.
+4. UNCERTAINTY: If signals conflict or momentum is waning, REJECT ("uncertain"). Prefer cash (0% loss) over low-conviction trades.
+5. APPROVAL: Approve ("trend") ONLY when trend momentum is strong, not overextended (RSI between 45 and 65), and expected move clearly exceeds fee friction.
+
+Return strictly JSON only:
+{"approve": boolean, "confidence": number from 0 to 100, "reason_code": "trend" | "weak_edge" | "uncertain" | "costs"}'''
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -42,7 +52,9 @@ def endpoint(config):
     base = config['LLM_BASE_URL'].rstrip('/')
     parts = urlsplit(base)
     if (parts.username or parts.password or parts.query or parts.fragment or not parts.hostname
-            or not (parts.scheme == 'https' or (parts.scheme == 'http' and parts.hostname in ('127.0.0.1', 'localhost', '::1')))):
+            or not (parts.scheme == 'https' or (parts.scheme == 'http' and
+                (parts.hostname in ('127.0.0.1', 'localhost', '::1') or
+                 (os.environ.get('MADAR_ALLOW_DOCKER_ROUTER')=='1' and parts.hostname=='host.docker.internal'))))):
         raise ValueError('Invalid LLM URL')
     return base + '/chat/completions'
 
@@ -65,11 +77,18 @@ def request_vote(config, features):
     if len(raw) > 65536:
         raise ValueError('Oversized response')
     result = json.loads(raw)
-    return validate_vote(json.loads(result['choices'][0]['message']['content']))
+    content = result['choices'][0]['message']['content'].strip()
+    if content.startswith('```'):
+        content = content.split('```')[1]
+        if content.startswith('json'):
+            content = content[4:]
+        content = content.strip()
+    return validate_vote(json.loads(content))
 
 
 def request_sha256(config, features):
     return hashlib.sha256(json.dumps(dict(version=VERSION, model=config['LLM_MODEL'],
+        prompt_sha256=hashlib.sha256(SYSTEM.encode()).hexdigest(),
         endpoint=config['LLM_BASE_URL'], features=features), sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 

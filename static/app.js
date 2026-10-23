@@ -26,7 +26,7 @@ const esc = (text) => String(text ?? '').replace(/[&<>"']/g, char => ({'&':'&amp
 const time = (t) => new Date(t * 1000).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tehran'});
 const date = (t) => new Date(t * 1000).toLocaleDateString('fa-IR',{month:'short',day:'numeric',timeZone:'Asia/Tehran'});
 const MODELS = {logistic:'Logistic regression',knn:'k-Nearest neighbors',ensemble:'Ensemble',hybrid_llm:'Ensemble + AI decision'};
-const STRATEGIES = {adaptive:'تطبیقی',momentum:'دنبال‌کننده روند',reversion:'بازگشت به میانگین',breakout:'شکست سقف',trend_hold:'روند قوی',ta_trend:'EMA + ADX + ATR'};
+const STRATEGIES = {adaptive:'تطبیقی',momentum:'دنبال‌کننده روند',reversion:'بازگشت به میانگین',breakout:'شکست سقف',trend_hold:'روند قوی',ta_trend:'EMA + ADX + ATR',ai_regime:'تشخیص رژیم و سد کارمزد'};
 const ACTIONS = {BUY:'خرید',SELL:'فروش',HOLD:'انتظار'};
 const MARKETS = {BTCTMN:['بیت‌کوین','BTC','₿'],ETHTMN:['اتریوم','ETH','Ξ'],USDTTMN:['تتر','USDT','₮'],PEPETMN:['پپه','PEPE','₱'],SOLTMN:['سولانا','SOL','◎'],XRPTMN:['ریپل','XRP','✕']};
 let state, chartMode='price', currentPage='dashboard', lastBacktest=null, toastTimer, pending=false, chartData=[];
@@ -62,6 +62,7 @@ document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click'
 window.addEventListener('hashchange',()=>setPage(location.hash.slice(1)));
 
 function render(){
+  if($('ops-freshness'))$('ops-freshness').textContent=state.last_update?time(state.last_update):'هنوز دریافت نشده';
   const s=state,c=s.config,m=s.metrics,a=s.account,running=s.running;
   document.body.classList.toggle('running',running);
   $('toggle-agent').innerHTML=icon(running?'pause':'play')+`<span>${running?'توقف ایجنت':'شروع ایجنت'}</span>`;
@@ -161,7 +162,7 @@ function renderTables(){
 $('activity-filter').addEventListener('change',renderTables);
 
 function compact(n){return new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(n);}
-function drawChart(target,data,{candles=false,trades=[],color='#b5a3ff',baseline=null}={}){
+function drawChart(target,data,{candles=false,trades=[],color='#e5b16b',baseline=null}={}){
   if(!data.length){target.innerHTML='<text x="450" y="160" text-anchor="middle">پس از شروع ایجنت، منحنی سرمایه نمایش داده می‌شود.</text>';return;}
   const W=Math.max(300,Math.min(900,target.clientWidth||900)),H=target.clientHeight||330,left=12,right=76,top=17,bottom=34,gw=W-left-right,gh=H-top-bottom;
   target.setAttribute('viewBox',`0 0 ${W} ${H}`);

@@ -89,6 +89,43 @@ class TradingTests(unittest.TestCase):
         self.assertEqual(observed, snapshot(altered[:80]))
         self.assertGreater(observed['atr_pct'], 0)
 
+    def test_ai_regime_hurdle_and_pullback(self):
+        bars = demo_candles(100)
+        config = validate({**self.config, 'strategy': 'ai_regime'})
+        last_price = bars[79]['c']
+        snap_pass = dict(ema_fast=last_price, ema_slow=last_price * 0.99, rsi=55.0, adx=25.0,
+                         plus_di=28.0, minus_di=15.0, atr_pct=1.0)
+        # Hurdle fail: atr_pct too low
+        snap_low_atr = dict(snap_pass, atr_pct=0.1)
+        with patch('ta_indicators.snapshot', return_value=snap_pass), patch('engine.predict', return_value=(0.8, 50)):
+            decision = decide(bars[:80], config)
+            self.assertEqual(decision['action'], 'BUY')
+            self.assertEqual(decision['regime'], 'ai_regime')
+        with patch('ta_indicators.snapshot', return_value=snap_low_atr), patch('engine.predict', return_value=(0.8, 50)):
+            decision = decide(bars[:80], config)
+            self.assertEqual(decision['action'], 'HOLD')
+
+    def test_cooldown_and_holding_reasons_distinct(self):
+        bars = demo_candles(100)
+        config = validate(self.config)
+        account = new_account(config)
+        # When holding a position, hold reason reflects open position
+        account.quantity = 10.0
+        account.entry = bars[79]['c']
+        with patch('engine.predict', return_value=(0.9, 50)):
+            res_holding = step(account, bars[:80], bars[80], config)
+        self.assertEqual(res_holding['action'], 'HOLD')
+        self.assertIn('موقعیت خرید از قبل باز است', res_holding['reason'])
+
+        # When recently exited, hold reason reflects cooldown
+        account_cd = new_account(config)
+        account_cd.last_exit_time = bars[80]['t'] - 60  # exited 1 minute ago (< 2 bars)
+        buy_feats = dict(fast=102, slow=100, rsi=60, z=0, volatility=.01, features=[0]*4)
+        with patch('engine.predict', return_value=(0.9, 50)), patch('engine.indicators', return_value=buy_feats):
+            res_cooldown = step(account_cd, bars[:80], bars[80], config)
+        self.assertEqual(res_cooldown['action'], 'HOLD')
+        self.assertIn('مدیریت نوسان', res_cooldown['reason'])
+
 
 if __name__ == '__main__':
     unittest.main()

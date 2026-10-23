@@ -1,0 +1,176 @@
+{
+  "version": "starkoch-wallex-1405-08-01",
+  "strategy": "ai_regime",
+  "model": "hybrid_llm",
+  "development": {
+    "0": [
+      {
+        "approve": false,
+        "confidence": 85,
+        "reason_code": "costs",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "dc35ad78efb13c8f422cfe587e36c3f8014d5d5cb87c77b38a7516ee319a398c",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 15,
+        "reason_code": "costs",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "d9dfeef2aea5d7d40cff50ec5439fb5bec6ff883e2fe655d55bc2c5b5cb57446",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 88,
+        "reason_code": "costs",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "e64395ae36d1a732fe523882f48442e7429e38b47524e92cc4ee406ce44c1594",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 20,
+        "reason_code": "costs",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "f76ab04b854c2da18acd46b9a0d19e669bedafcf887e6b0778e9a4f7e6d6fa67",
+        "status": "ok"
+      }
+    ],
+    "288": [
+      {
+        "approve": false,
+        "confidence": 75,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "be6d258f737cad20aa1a23f51dd62cdcf770cc3fc062e6b9941c215915f01703",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 85,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "4212d063472a7040f12c90fcdf830205d9a90be7646441beb87862d84248d1a2",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 85,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "a87cc8bdb06e8460bd9beb7e80772833cf97dfa766b34e7928c21ed946821faa",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 20,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "a41c3c25b1f9337585cb465a1282282d1694f885f7e429428461cbe38698657b",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 20,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "7c4e40e78c4f531b8bfa809cce0a95621ef4c645e131bf15d4666ce0b8d65691",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 85,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "bb5561c438f0601874796fee4a245c9a4aa5c53673ef55807e84019cae85bf2d",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 78,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "140ae80b7cf7155aad4130cc5dbe2330529ab3d9ef5a07742a4d6dbc23b6719a",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 72,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "dc4c53c473df6b986be34c00cb3da50f43d9ea2c6a40dbe374edfa64a3bf0117",
+        "status": "ok"
+      },
+      {
+        "approve": false,
+        "confidence": 72,
+        "reason_code": "weak_edge",
+        "model": "ag/gemini-3.8-flash-medium",
+        "prompt_version": "entry-veto-v1",
+        "request_sha256": "00b61d50d8fd936a3ded983b86d6333374875533b1085015df34d5d190a2756c",
+        "status": "ok"
+      }
+    ],
+    "576": []
+  },
+  "holdout": [
+    {
+      "approve": false,
+      "confidence": 85,
+      "reason_code": "weak_edge",
+      "model": "ag/gemini-3.8-flash-medium",
+      "prompt_version": "entry-veto-v1",
+      "request_sha256": "34abb1d9c7137eb15353dcac98488dd27de831ba9bfab9b5828cddff586c1de0",
+      "status": "ok"
+    },
+    {
+      "approve": true,
+      "confidence": 78,
+      "reason_code": "trend",
+      "model": "ag/gemini-3.8-flash-medium",
+      "prompt_version": "entry-veto-v1",
+      "request_sha256": "d96a98a16a36b88f5e117a65b2f236f7301ca6acc0522b1bbfa85cb3eea1062e",
+      "status": "ok"
+    },
+    {
+      "approve": false,
+      "confidence": 30,
+      "reason_code": "weak_edge",
+      "model": "ag/gemini-3.8-flash-medium",
+      "prompt_version": "entry-veto-v1",
+      "request_sha256": "383a2a72b5884ea401622e71f210176e3bce7e57c12608e076f7d8e11d4edc80",
+      "status": "ok"
+    },
+    {
+      "approve": false,
+      "confidence": 42,
+      "reason_code": "costs",
+      "model": "ag/gemini-3.8-flash-medium",
+      "prompt_version": "entry-veto-v1",
+      "request_sha256": "dea4a7064812be54f631dfd0e0670a59f821ef330d5adcd0300f22140be86b82",
+      "status": "ok"
+    },
+    {
+      "approve": true,
+      "confidence": 72,
+      "reason_code": "trend",
+      "model": "ag/gemini-3.8-flash-medium",
+      "prompt_version": "entry-veto-v1",
+      "request_sha256": "5a70d2d59cbc37aa0f59b88f1bb5ca192e4b8d6d03912b72af1881d7e0ab16e7",
+      "status": "ok"
+    }
+  ]
+}

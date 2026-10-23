@@ -9,7 +9,7 @@ DEFAULTS = dict(symbol='BTCTMN', source='demo', model='logistic', strategy='adap
                 capital=5_000_000, allocation=20, stop_loss=1.5, take_profit=3,
                 max_drawdown=5, fee=0.2, slippage=0.05, confidence=56, seed=42)
 MODELS = ('logistic', 'knn', 'ensemble', 'hybrid_llm')
-STRATEGIES = ('adaptive', 'momentum', 'reversion', 'breakout', 'trend_hold', 'ta_trend')
+STRATEGIES = ('adaptive', 'momentum', 'reversion', 'breakout', 'trend_hold', 'ta_trend', 'ai_regime')
 SYMBOLS = {'BTCTMN': 6_200_000_000, 'ETHTMN': 230_000_000, 'USDTTMN': 105_000,
            'PEPETMN': 1, 'SOLTMN': 20_000_000, 'XRPTMN': 250_000}
 BAR_SECONDS = 900
@@ -96,10 +96,10 @@ def predict(bars, model):
     return probability, len(samples)
 
 
-def decide(bars, config, entry_allowed=True):
+def decide(bars, config, entry_allowed=True, in_cooldown=False, holding_position=False):
     if len(bars) < 45:
         return dict(action='HOLD', confidence=50, reason='در حال جمع‌آوری داده برای آموزش مدل', indicators={}, samples=0)
-    if config['strategy'] == 'ta_trend' and len(bars) < 60:
+    if config['strategy'] in ('ta_trend', 'ai_regime') and len(bars) < 60:
         return dict(action='HOLD', confidence=50, reason='در حال جمع‌آوری ۶۰ کندل برای ADX و ATR', indicators={}, samples=0)
     data = indicators(bars)
     probability, samples = predict(bars, config['model'])
@@ -122,6 +122,21 @@ def decide(bars, config, entry_allowed=True):
                and 4 * technical['atr_pct'] > 1.2 * round_trip_cost)
         sell = technical['ema_fast'] < technical['ema_slow'] or bars[-1]['c'] < technical['ema_slow']
         reason = 'روند EMA، ADX و ATR از کتابخانه متن‌باز ta'
+    elif strategy == 'ai_regime':
+        from ta_indicators import snapshot
+        technical = snapshot(bars)
+        round_trip_cost = 2 * (config['fee'] + config['slippage'])
+        trend_aligned = (technical['ema_fast'] > technical['ema_slow']
+                         and technical['plus_di'] > technical['minus_di']
+                         and technical['adx'] >= 22)
+        hurdle_cleared = (4 * technical['atr_pct'] > 1.5 * round_trip_cost)
+        dist_from_fast = (bars[-1]['c'] / technical['ema_fast'] - 1) * 100
+        pullback_ok = (45 <= technical['rsi'] <= 66
+                       and bars[-1]['c'] >= technical['ema_fast'] * 0.995
+                       and dist_from_fast <= 1.5)
+        buy = trend_aligned and hurdle_cleared and pullback_ok
+        sell = technical['ema_fast'] < technical['ema_slow'] or bars[-1]['c'] < technical['ema_slow']
+        reason = 'تشخیص رژیم روند صعودی، سد کارمزد و اصلاح قیمت'
     elif strategy == 'breakout':
         # A completed close above the previous 20 highs; no same-bar/future high.
         buy = bars[-1]['c'] > max(bar['h'] for bar in bars[-21:-1]) and data['rsi'] < 85
@@ -141,14 +156,21 @@ def decide(bars, config, entry_allowed=True):
         reason = 'بازگشت قیمت به میانگین ۲۰ کندل'
     threshold = config['confidence'] / 100
     action = 'BUY' if buy and probability >= threshold else 'SELL' if sell and probability <= 1 - threshold else 'HOLD'
+    if not entry_allowed and action == 'BUY':
+        action = 'HOLD'
     confidence = probability if action == 'BUY' else 1 - probability if action == 'SELL' else max(probability, 1 - probability)
     detail = f'{reason}؛ احتمال رشد مدل {probability:.1%}؛ RSI={data["rsi"]:.1f}'
     if action == 'HOLD':
-        detail += '؛ توافق کافی بین مدل و استراتژی وجود ندارد'
+        if holding_position:
+            detail += '؛ موقعیت خرید از قبل باز است'
+        elif in_cooldown and buy:
+            detail += '؛ ورود مجدد موقتاً پس از خروج قبلی در حال مدیریت نوسان است'
+        else:
+            detail += '؛ توافق کافی بین مدل و استراتژی وجود ندارد'
     decision = dict(action=action, confidence=round(confidence * 100, 1), reason=detail,
                 indicators={k: v for k, v in data.items() if k != 'features'}, samples=samples,
                 probability=probability, regime=strategy)
-    if strategy == 'ta_trend':
+    if strategy in ('ta_trend', 'ai_regime'):
         decision['indicators'].update(technical)
     if config['model'] == 'hybrid_llm' and action == 'BUY' and entry_allowed:
         from llm_gateway import review
@@ -160,8 +182,12 @@ def decide(bars, config, entry_allowed=True):
                         round_trip_cost_pct=2 * (config['fee'] + config['slippage']),
                         past_bars=[{k: round(bar[k] / anchor, 8) for k in ('o', 'h', 'l', 'c')}
                                    for bar in bars[-24:]])
-        if strategy == 'ta_trend':
+        if strategy in ('ta_trend', 'ai_regime'):
             features['technical'] = technical
+            features['adx'] = technical['adx']
+            features['atr_pct'] = technical['atr_pct']
+            features['dist_from_fast_pct'] = round((bars[-1]['c'] / technical['ema_fast'] - 1) * 100, 2)
+            features['hurdle_ratio'] = round(4 * technical['atr_pct'] / (2 * (config['fee'] + config['slippage'])), 2)
         vote = review(features)
         decision['llm'] = vote
         approved = vote['approve'] and vote['confidence'] >= config['confidence']
@@ -187,6 +213,7 @@ class Account:
     halted: bool = False
     pending_exit: str = ''
     expires_at: float = 0
+    last_exit_time: float = 0
 
     def equity(self, price):
         return self.cash + self.quantity * price
@@ -218,6 +245,7 @@ class Account:
             self.cash += proceeds
             self.quantity = self.cost = self.entry = 0
             self.pending_exit = ''
+            self.last_exit_time = timestamp
         else:
             return None
         self.fees += charge
@@ -232,7 +260,7 @@ class Account:
         if current_dd >= config['max_drawdown']:
             self.halted = True
             return 'توقف ریسک: سقف افت سرمایه فعال شد'
-        if self.quantity:
+        if self.quantity and self.entry:
             change = (price / self.entry - 1) * 100
             if change <= -config['stop_loss']:
                 return 'خروج خودکار: حد ضرر'
@@ -256,8 +284,13 @@ def step(account, history, bar, config):
     risk = account.pending_exit or opening_risk
     account.pending_exit = ''
     # Forced exits and expiry must never wait for an LLM or depend on its answer.
+    in_cooldown = bool(account.last_exit_time and bar['t'] - account.last_exit_time < 2 * BAR_SECONDS)
+    holding_position = bool(account.quantity)
+    entry_allowed = not holding_position and not in_cooldown
     decision = (dict(action='HOLD', confidence=0, reason='توقف یا خروج اجباری', indicators={}, samples=0)
-                if expired or risk or account.halted else decide(history, config, entry_allowed=not bool(account.quantity)))
+                if expired or risk or account.halted else decide(history, config, entry_allowed=entry_allowed,
+                                                                 in_cooldown=in_cooldown,
+                                                                 holding_position=holding_position))
     action = 'SELL' if risk and account.quantity else decision['action']
     if account.halted and action != 'SELL':
         action = 'HOLD'

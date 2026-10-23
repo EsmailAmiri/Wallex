@@ -14,9 +14,23 @@ import challenge_rules as rules
 
 ROOT = Path(__file__).resolve().parent
 OFFICIAL_URL = 'https://api.wallex.ir/mcp'
-OFFICIAL_TOOLS = dict(get_markets='wallex_basic_get_markets', get_market_candles='wallex_basic_candle_history',
-                      get_account_balances='wallex_basic_get_account_balances', get_account_fees='wallex_basic_get_account_fees')
-READ_TOOLS = {'health', 'get_markets', 'get_market_candles', 'get_account_balances', 'get_challenge_rules', 'check_challenge_market', 'get_account_fees'}
+OFFICIAL_TOOLS = dict(get_markets='wallex_basic_get_markets', get_spot_markets='wallex_spot_get_markets', get_market_candles='wallex_basic_candle_history',
+                      get_account_balances='wallex_basic_get_account_balances', get_account_fees='wallex_basic_get_account_fees',
+                      get_credit_sub_accounts='wallex_credit_active_sub_accounts_list',
+                      get_credit_package='wallex_credit_active_user_package_details',
+                      get_credit_overview='wallex_credit_active_user_packages_overview',
+                      get_credit_history='wallex_credit_user_package_history_list',
+                      get_credit_balances='wallex_credit_sub_account_balances_details')
+READ_TOOLS = {'health', 'get_markets', 'get_spot_markets', 'get_market_candles', 'get_account_balances', 'get_challenge_rules', 'check_challenge_market', 'get_account_fees',
+              'get_credit_sub_accounts', 'get_credit_package', 'get_credit_overview', 'get_credit_history', 'get_credit_balances'}
+# Order tools: only accessible through LiveOrderAdapter.order_call(), never through the dashboard call().
+ORDER_TOOLS_MAP = {
+    'place_order':    'wallex_spot_post_account_orders',
+    'cancel_order':   'wallex_spot_delete_orders_client',
+    'get_order':      'wallex_spot_get_orders_client',
+    'open_orders':    'wallex_spot_get_open_order',
+    'order_history':  'wallex_spot_get_orders',
+}
 
 
 def remote_headers(url, config):
@@ -54,15 +68,25 @@ def official_response(name, data, arguments):
         bars = checked_bars(normalize_exchange_bars(raw, int(time.time())))
         return dict(symbol=rules.assert_market_allowed(arguments.get('symbol','BTCTMN')), timeframe_seconds=900,
                     candles=bars[-arguments.get('count',160):], source='wallex-official-mcp', transport='mcp')
-    if name == 'get_markets':
+    if name in ('get_markets', 'get_spot_markets'):
         allowed={}
-        for symbol, details in result.get('symbols',{}).items():
+        if 'markets' in result:
+            if not isinstance(result['markets'],list):raise ValueError('Invalid markets list')
+            if any(not isinstance(item,dict) or not isinstance(item.get('symbol'),str) for item in result['markets']):
+                raise ValueError('Invalid market record')
+            entries=((item['symbol'],item) for item in result['markets'])
+        else:
+            if not isinstance(result.get('symbols'),dict):raise ValueError('Missing market registry')
+            entries=result['symbols'].items()
+        for symbol, details in entries:
             try:
-                rules.assert_market_allowed(symbol)
-                allowed[symbol]=details
+                normalized=rules.assert_market_allowed(symbol)
+                allowed[normalized]=details
             except rules.PolicyViolation:
                 continue
-        return {**result, 'symbols': allowed, 'rule_version': rules.RULE_VERSION}
+        filtered={**result,'symbols':allowed,'rule_version':rules.RULE_VERSION}
+        if 'markets' in result:filtered['markets']=list(allowed.values())
+        return filtered
     return result
 
 
@@ -176,6 +200,47 @@ class MCPBridge:
         except TimeoutError:
             future.cancel()
             raise ValueError('مهلت دریافت پاسخ MCP تمام شد.') from None
+
+    def order_call(self, name, arguments=None):
+        """Order tool access – only for LiveOrderAdapter, never the dashboard.
+
+        The read-only ``call()`` guard remains intact; this separate pathway
+        allows the validated live-order adapter to reach order tools after
+        its own policy checks have passed.
+        """
+        if name not in ORDER_TOOLS_MAP:
+            raise ValueError('Unknown order tool: ' + name)
+        self.connect()
+        if self.info.get('provider') != 'wallex-official':
+            raise ValueError('Live orders require official Wallex MCP.')
+        native = ORDER_TOOLS_MAP[name]
+        if native not in self.remote_tools:
+            raise ValueError('Order tool unavailable on MCP server: ' + native)
+        future = asyncio.run_coroutine_threadsafe(
+            self._raw_tool_call(native, arguments or {}), self.loop)
+        try:
+            return future.result(timeout=40)
+        except TimeoutError:
+            future.cancel()
+            raise ValueError('Order call timed out: ' + native) from None
+
+    async def _raw_tool_call(self, native_name, arguments):
+        """Low-level tool/call without read-only or official-response wrapping."""
+        async with self.call_lock:
+            started = time.monotonic()
+            result = await self.session.call_tool(native_name, arguments)
+            if result.isError:
+                raise ValueError('MCP tool error: ' + native_name)
+            data = result.structuredContent
+            if data is None:
+                data = json.loads(''.join(
+                    item.text for item in result.content
+                    if item.type == 'text'))
+            self.info['calls'] += 1
+            self.info['last_call'] = dict(
+                tool=native_name, timestamp=int(time.time()),
+                duration_ms=round((time.monotonic() - started) * 1000))
+            return data
 
     def close(self):
         if self.loop and self.loop.is_running() and self.stop:
