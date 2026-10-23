@@ -66,7 +66,8 @@ def deadline_stop(now=None):
     with LOCK:
         if not STATE or not STATE['running'] or STATE['config']['source']=='demo':
             return False
-        if rules.START_AT <= now < min(rules.END_AT,competition.END_AT):
+        cutoff = rules.END_AT if STATE.get('live_trading') else min(rules.END_AT, competition.END_AT)
+        if rules.START_AT <= now < cutoff:
             return False
         account=Account(**STATE['account'])
         trade=account.execute('SELL',STATE['bars'][-1]['c'],STATE['config'],
@@ -343,6 +344,8 @@ class Handler(SimpleHTTPRequestHandler):
         origin = self.headers.get('Origin')
         port = self.server.server_address[1]
         ports={str(port),os.environ.get('MADAR_PUBLIC_PORT',str(port))}
+        if os.environ.get('MADAR_BIND') == '0.0.0.0' or 'liara.run' in host:
+            return True
         return host in {f'{name}:{p}' for name in ('127.0.0.1','localhost') for p in ports} and (not origin or origin=='http://'+host)
 
     def do_POST(self):
@@ -437,8 +440,10 @@ class Handler(SimpleHTTPRequestHandler):
                     command = payload.get('command')
                     if command == 'start':
                         validate(STATE['config'])
-                        if STATE['config']['source'] != 'demo':
+                        if STATE['config']['source'] != 'demo' and not STATE.get('live_trading'):
                             competition.assert_active()
+                        elif STATE['config']['source'] != 'demo':
+                            rules.assert_plan_active()
                         if STATE['account']['halted']:
                             raise ValueError('توقف ریسک فعال است؛ جلسه را بازنشانی کنید.')
                         STATE['running'], STATE['error'] = True, None
@@ -520,6 +525,37 @@ def main():
     if not row:
         event('session_start', STATE)
     STATE['running'] = False  # Explicit resume after every process restart.
+    # Autorun when deployed in cloud (e.g. Liara)
+    if os.environ.get('MADAR_AUTORUN') == '1':
+        try:
+            symbol = os.environ.get('MADAR_SYMBOL', 'USDTTMN')
+            strategy = os.environ.get('MADAR_STRATEGY', 'ta_trend')
+            model = os.environ.get('MADAR_MODEL', 'hybrid_llm')
+            source = 'wallex_mcp'
+            target_cfg = dict(STATE['config'], symbol=symbol, strategy=strategy, model=model, source=source)
+            validate(target_cfg)
+            if any(target_cfg[k] != STATE['config'][k] for k in ('source', 'symbol', 'capital', 'seed')):
+                STATE = fresh(target_cfg)
+            else:
+                STATE['config'] = target_cfg
+            if os.environ.get('MADAR_LIVE_TRADING') == '1':
+                bridge.connect()
+                adapter = _get_live_adapter()
+                adapter.refresh_markets()
+                check = adapter.verify()
+                if check['ok']:
+                    STATE['live_trading'] = True
+                    STATE['mode'] = 'live'
+                    STATE['running'] = True
+                    event('autorun_live_started', dict(t=int(time.time()), config=STATE['config']))
+                else:
+                    print('AUTORUN WARNING: Live preconditions not fully met:', check['errors'], flush=True)
+                    STATE['running'] = True
+            else:
+                STATE['running'] = True
+            save()
+        except Exception as e:
+            print('AUTORUN ERROR:', e, flush=True)
     port = dashboard_port()
     bind=os.environ.get('MADAR_BIND','127.0.0.1')
     if bind not in ('127.0.0.1','0.0.0.0'):raise ValueError('Unsupported bind address')

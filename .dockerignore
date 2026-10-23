@@ -12,6 +12,7 @@
 !challenge_rules.py
 !competition.py
 !product_status.py
+!live_order.py
 !hybrid_research.py
 !run_hybrid_research.py
 !challenge_research.py
